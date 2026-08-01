@@ -3,7 +3,7 @@
    Todo el aplicativo (HTML/CSS/JS/iconos) se cachea en la instalación;
    la librería de tabs vive en IndexedDB (gestionada por library.js), no aquí.
    ============================================================ */
-const CACHE_NAME = 'campanella-cache-v1';
+const CACHE_NAME = 'campanella-cache-v2';
 const ASSETS = [
   './',
   './index.html',

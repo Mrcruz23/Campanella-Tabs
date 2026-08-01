@@ -191,9 +191,13 @@
     <div class="content" style="grid-column: 1 / -1;">
       <div class="library-toolbar">
         <input type="text" id="librarySearch" class="sans" placeholder="Buscar por título…">
-        <button type="button" class="btn-ghost" id="importTabBtn">Importar (.json)</button>
+        <button type="button" class="btn-ghost" id="importTabBtn">Importar una (.json)</button>
         <input type="file" id="importTabInput" accept="application/json,.json" style="display:none;">
+        <button type="button" class="btn-ghost" id="exportAllBtn">↓ Exportar toda mi librería</button>
+        <button type="button" class="btn-ghost" id="importAllBtn">↑ Importar librería completa</button>
+        <input type="file" id="importAllInput" accept="application/json,.json" style="display:none;">
       </div>
+      <div id="libraryMsgs"></div>
       <div class="library-grid" id="libraryGrid"></div>
     </div>
   </div>

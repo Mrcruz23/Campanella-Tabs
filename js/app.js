@@ -329,9 +329,50 @@
       try {
         const tab = L.importTabFromJSON(ev.target.result);
         await L.saveTab(tab);
+        showMsg($('libraryMsgs'), `Se importó "${tab.title || 'la tablatura'}".`, 'ok');
         renderLibrary();
       } catch (err) {
-        alert('No se pudo importar el archivo: ' + err.message);
+        showMsg($('libraryMsgs'), 'No se pudo importar el archivo: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  $('exportAllBtn').addEventListener('click', async () => {
+    const json = await L.exportAllAsJSON();
+    const count = (JSON.parse(json).count) || 0;
+    if (count === 0) {
+      showMsg($('libraryMsgs'), 'Tu librería está vacía, no hay nada para exportar todavía.', 'warn');
+      return;
+    }
+    const dateStr = new Date().toISOString().slice(0, 10);
+    downloadBlob(json, `campanella-libreria-completa_${dateStr}.json`, 'application/json');
+    showMsg($('libraryMsgs'), `Se exportaron ${count} tablatura(s) en un solo archivo. Pasalo al otro dispositivo (por email, Drive, cable, etc.) y usá "Importar librería completa" ahí.`, 'ok');
+  });
+
+  $('importAllBtn').addEventListener('click', () => $('importAllInput').click());
+  $('importAllInput').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        // peek at how many tabs are already here vs. in the bundle, so the
+        // confirm dialog is informative instead of a blind yes/no
+        const existing = await L.listTabs();
+        const preview = JSON.parse(ev.target.result);
+        const incomingCount = (preview && preview.tabs && preview.tabs.length) || 0;
+        const overwrite = confirm(
+          `Este archivo trae ${incomingCount} tablatura(s).\n\n` +
+          `Aceptar = fusionar: las que coincidan por id se ACTUALIZAN con la versión del archivo, las nuevas se agregan (tenés ${existing.length} guardadas ahora).\n` +
+          `Cancelar = importar como copias nuevas, sin tocar las que ya tenés.`
+        );
+        const result = await L.importAllFromJSON(ev.target.result, { mode: overwrite ? 'merge' : 'copy' });
+        showMsg($('libraryMsgs'), `Importadas ${result.imported} tablatura(s)${result.skipped ? ` (${result.skipped} se saltearon por estar incompletas)` : ''}.`, 'ok');
+        renderLibrary();
+      } catch (err) {
+        showMsg($('libraryMsgs'), 'No se pudo importar el archivo: ' + err.message, 'error');
       }
     };
     reader.readAsText(file);

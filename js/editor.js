@@ -52,12 +52,16 @@
         </div>
         <div class="editor-tool-group">
           <label>Compás</label>
-          <select class="ed-meter">
-            <option value="4">4/4</option>
-            <option value="3">3/4</option>
-            <option value="6">6/8 (6 corcheas)</option>
-            <option value="2">2/4</option>
-          </select>
+          <div class="meter-inputs">
+            <input type="number" class="ed-meter-num" value="4" min="1" max="32" inputmode="numeric">
+            <span class="meter-slash">/</span>
+            <select class="ed-meter-den">
+              <option value="4" selected>4</option>
+              <option value="8">8</option>
+              <option value="2">2</option>
+              <option value="16">16</option>
+            </select>
+          </div>
         </div>
         <button type="button" class="btn-ghost ed-add-rest">+ Silencio</button>
         <button type="button" class="btn-ghost ed-undo" disabled>Deshacer última nota</button>
@@ -88,10 +92,18 @@
     this.mount.querySelector('.ed-duration').addEventListener('change', (e) => {
       this.pendingDurationBeats = DURATIONS[parseInt(e.target.value, 10)].beats;
     });
-    this.mount.querySelector('.ed-meter').addEventListener('change', (e) => {
-      this.beatsPerMeasure = parseInt(e.target.value, 10) === 6 ? 3 : parseInt(e.target.value, 10);
-      // 6/8 is tracked internally as 3 "dotted-feel" beats of eighth-note groups for measure-splitting purposes
-    });
+    const updateMeter = () => {
+      const num = Math.max(1, parseInt(this.mount.querySelector('.ed-meter-num').value, 10) || 4);
+      const den = parseInt(this.mount.querySelector('.ed-meter-den').value, 10) || 4;
+      // beatsPerMeasure is expressed in quarter-note units regardless of the
+      // denominator, so 9/8 correctly becomes 4.5 quarter-notes per measure
+      // (9 eighth notes), not 9 — any time signature works, not just the
+      // handful that used to be hardcoded.
+      this.beatsPerMeasure = num * (4 / den);
+    };
+    this.mount.querySelector('.ed-meter-num').addEventListener('input', updateMeter);
+    this.mount.querySelector('.ed-meter-den').addEventListener('change', updateMeter);
+    updateMeter();
     this.mount.querySelector('.ed-add-rest').addEventListener('click', () => this.addRest());
     this.mount.querySelector('.ed-undo').addEventListener('click', () => this.undo());
     this.mount.querySelector('.ed-add-note').addEventListener('click', () => {

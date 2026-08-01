@@ -92,7 +92,7 @@ nav.tabs button.active{
   nav.tabs button{ flex:1; padding:10px 8px; font-size:.78rem; }
 }
 
-.view{ display:none; }
+.view{ display:none; min-width:0; }
 .view.active{ display:block; }
 
 .panel{
@@ -195,6 +195,7 @@ button:disabled{ opacity:.4; cursor:not-allowed; }
   box-shadow: var(--shadow);
   padding:20px 10px;
   max-height:72vh;
+  max-width:100%;
   overflow-y:auto;
   overflow-x:auto;
 }
@@ -222,12 +223,17 @@ footer.app-footer{
 }
 .editor-tool-group{ display:flex; flex-direction:column; gap:5px; min-width:150px; }
 .editor-tool-group label{ font-size:.76rem; color:var(--ink-faint); font-weight:600; }
+.meter-inputs{ display:flex; align-items:center; gap:6px; }
+.meter-inputs input.ed-meter-num{ width:56px; padding:8px 6px; text-align:center; }
+.meter-inputs select.ed-meter-den{ width:64px; padding:8px 6px; }
+.meter-slash{ color:var(--ink-faint); font-weight:700; }
 .editor-toolbar select{ padding:8px; }
 .editor-toolbar button{ padding:9px 14px; align-self:flex-end; }
 
 .editor-grid-wrap{
   background:#1B1710; border:1px solid var(--panel-border); border-radius:10px;
   padding:16px 10px; margin-bottom:14px; overflow-x:auto; overflow-y:auto; max-height:50vh;
+  max-width:100%;
   box-shadow: var(--shadow);
 }
 .editor-empty{
@@ -288,9 +294,13 @@ footer.app-footer{
 
 /* ---------- library view ---------- */
 .library-toolbar{
-  display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:18px;
+  display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;
 }
 .library-toolbar input[type=text]{ flex:1 1 220px; }
+.library-toolbar button{ flex:0 1 auto; white-space:nowrap; }
+@media (max-width: 560px){
+  .library-toolbar button{ flex:1 1 100%; }
+}
 .library-grid{
   display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:14px;
 }

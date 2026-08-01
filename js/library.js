@@ -97,8 +97,56 @@
     return parsed;
   }
 
+  const BUNDLE_FORMAT = 'campanella-library-bundle-v1';
+
+  /** Exporta toda la librería en un único archivo .json, para pasar todas las tabs de una entre dispositivos. */
+  async function exportAllAsJSON() {
+    const items = await listTabs();
+    const bundle = {
+      format: BUNDLE_FORMAT,
+      exportedAt: Date.now(),
+      count: items.length,
+      tabs: items
+    };
+    return JSON.stringify(bundle, null, 2);
+  }
+
+  /**
+   * Importa un archivo generado por exportAllAsJSON. Cada tab conserva su id
+   * original, así que si ya existe una tab con ese id en este dispositivo,
+   * se sobrescribe (útil para "traer lo último de la PC"); las que no
+   * existían se agregan. Para evitar sobrescribir por error, se puede pasar
+   * mode:'copy' y entonces cada tab importada recibe un id nuevo.
+   *
+   * @param {string} jsonText
+   * @param {{mode:'merge'|'copy'}} opts
+   * @returns {Promise<{imported:number, skipped:number}>}
+   */
+  async function importAllFromJSON(jsonText, opts) {
+    const mode = (opts && opts.mode) || 'merge';
+    const parsed = JSON.parse(jsonText);
+    let tabs;
+    if (parsed && parsed.format === BUNDLE_FORMAT && Array.isArray(parsed.tabs)) {
+      tabs = parsed.tabs;
+    } else if (Array.isArray(parsed)) {
+      tabs = parsed; // tolerate a plain array too
+    } else {
+      throw new Error('el archivo no tiene el formato de una librería exportada por esta app.');
+    }
+    let imported = 0, skipped = 0;
+    for (const t of tabs) {
+      if (!t || !t.events) { skipped++; continue; }
+      const record = Object.assign({}, t);
+      if (mode === 'copy') delete record.id;
+      await saveTab(record);
+      imported++;
+    }
+    return { imported, skipped };
+  }
+
   global.CampanellaLibrary = {
     saveTab, deleteTab, getTab, listTabs, uid,
-    exportTabAsJSON, importTabFromJSON
+    exportTabAsJSON, importTabFromJSON,
+    exportAllAsJSON, importAllFromJSON
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -71,7 +71,7 @@
     const systemHeight = 3 * ROW_GAP;
     const totalHeight = TOP_MARGIN * 2 + systems.length * systemHeight + (systems.length - 1) * SYSTEM_VGAP + 10;
 
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${Math.max(totalHeight, 120)}" viewBox="0 0 ${svgWidth} ${Math.max(totalHeight, 120)}" font-family="Courier New, monospace">`;
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${Math.max(totalHeight, 120)}" preserveAspectRatio="xMinYMin meet" font-family="Courier New, monospace" style="display:block; width:${svgWidth}px; max-width:none;">`;
     svg += `<rect x="0" y="0" width="${svgWidth}" height="${Math.max(totalHeight, 120)}" fill="${C.bg}"/>`;
 
     let cumulativeBeat = 0;
