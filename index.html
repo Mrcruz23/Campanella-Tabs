@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Campanella · Tablaturas para Ukulele</title>
+<meta name="description" content="Generador y editor de tablaturas campanella para ukulele GCEA, con librería local y motor de reglas de digitación. Funciona offline.">
+<meta name="theme-color" content="#14110C">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Campanella">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="inner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <p class="eyebrow sans">afinación reentrante · Sol·Do·Mi·La</p>
+        <h1>Campanella <em>Tablaturas</em></h1>
+      </div>
+    </div>
+    <nav class="tabs sans">
+      <button type="button" id="nav-generator" class="active">Generador</button>
+      <button type="button" id="nav-editor">Editor manual</button>
+      <button type="button" id="nav-library">Mi librería</button>
+    </nav>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ============ GENERATOR VIEW ============ -->
+  <div class="view active" id="view-generator">
+    <div class="panel">
+      <h2>1 · Partitura</h2>
+      <div class="field">
+        <div class="dropzone sans" id="dropzone">
+          <input type="file" id="fileInput" accept=".xml,.musicxml,text/xml,application/xml">
+          <strong>Arrastra tu archivo aquí</strong>
+          <span>o hacé clic para elegirlo — .xml / .musicxml (sin comprimir)</span>
+          <div class="filename" id="filename"></div>
+        </div>
+        <div class="hint">Si tu archivo es .mxl (comprimido), volvé a exportarlo desde tu editor de partituras como "MusicXML sin comprimir".</div>
+      </div>
+
+      <div class="field" id="partField" style="display:none;">
+        <label for="partSelect">Voz / instrumento</label>
+        <select id="partSelect"></select>
+      </div>
+
+      <div id="fileMsgs"></div>
+
+      <h2 style="margin-top:22px;">2 · Ajustes de arreglo</h2>
+
+      <div class="field">
+        <label for="maxFret">Traste máximo permitido</label>
+        <select id="maxFret">
+          <option value="7">Hasta el traste 7 (más fácil)</option>
+          <option value="10">Hasta el traste 10</option>
+          <option value="12" selected>Hasta el traste 12 (recomendado)</option>
+          <option value="15">Hasta el traste 15 (extendido)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="transpose">Transportar (semitonos)</label>
+        <div class="row2">
+          <input type="number" id="transpose" value="0" step="1">
+          <button class="btn-ghost" id="suggestBtn" type="button">Sugerir</button>
+        </div>
+        <div class="hint">Sugerir busca el desplazamiento en octavas que mejor centra la melodía dentro del rango del ukulele.</div>
+      </div>
+
+      <div class="field">
+        <label for="handWeight">Preferencia de digitación</label>
+        <select id="handWeight">
+          <option value="smooth">Mano estable (menos saltos de traste)</option>
+          <option value="balanced" selected>Equilibrado</option>
+          <option value="open">Favorecer cuerdas al aire</option>
+        </select>
+        <div class="hint">En los tres modos, un salto de traste muy grande solo se elige cuando no hay ninguna opción más cercana.</div>
+      </div>
+
+      <button class="btn-primary" id="generateBtn" disabled>Generar tablatura</button>
+
+      <div class="legend">
+        <span><b>4</b> Sol aguda</span>
+        <span><b>3</b> Do</span>
+        <span><b>2</b> Mi</span>
+        <span><b>1</b> La</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="empty" id="emptyState">
+        <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+          <circle cx="36" cy="36" r="34" stroke="#8A7C5E" stroke-width="1.5"/>
+          <circle cx="36" cy="36" r="24" stroke="#8A7C5E" stroke-width="1.2"/>
+          <circle cx="36" cy="36" r="14" stroke="#8A7C5E" stroke-width="1"/>
+          <circle cx="36" cy="36" r="3" fill="#8A7C5E"/>
+        </svg>
+        <h3>Todavía no hay tablatura</h3>
+        <p>Subí un archivo MusicXML en el panel de la izquierda para empezar.</p>
+      </div>
+
+      <div id="resultArea" style="display:none;">
+        <h2 class="tunetitle" id="tuneTitle">Tablatura</h2>
+        <div class="tunemeta sans" id="tuneMeta"></div>
+
+        <div class="transport">
+          <button class="btn-brass" id="playBtn">▶ Reproducir</button>
+          <button class="btn-ghost" id="stopBtn" disabled>■ Detener</button>
+          <div class="tempo-ctl">
+            <span>Tempo (BPM)</span>
+            <input type="number" id="bpmInput" value="100" min="20" max="300">
+          </div>
+        </div>
+
+        <div class="tabwrap" id="tabwrap"></div>
+
+        <div class="btnbar">
+          <button class="btn-brass" id="saveToLibraryBtn">★ Guardar en mi librería</button>
+          <button class="btn-ghost" id="downloadTxtBtn">Descargar como texto (.txt)</button>
+          <button class="btn-ghost" id="downloadSvgBtn">Descargar tablatura (.svg)</button>
+          <button class="btn-ghost" id="printBtn">Imprimir / PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ EDITOR VIEW ============ -->
+  <div class="view" id="view-editor">
+    <div class="panel">
+      <h2>Tablatura manual</h2>
+      <div class="field">
+        <label for="editorTitleInput">Título</label>
+        <input type="text" id="editorTitleInput" placeholder="Nombre de la pieza">
+      </div>
+      <div class="field">
+        <label for="editorMaxFret">Traste máximo permitido</label>
+        <select id="editorMaxFret">
+          <option value="7">Hasta el traste 7 (más fácil)</option>
+          <option value="10">Hasta el traste 10</option>
+          <option value="12" selected>Hasta el traste 12 (recomendado)</option>
+          <option value="15">Hasta el traste 15 (extendido)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="editorWeightMode">Preferencia de digitación (sugerencias)</label>
+        <select id="editorWeightMode">
+          <option value="smooth">Mano estable</option>
+          <option value="balanced" selected>Equilibrado</option>
+          <option value="open">Favorecer cuerdas al aire</option>
+        </select>
+        <div class="hint">El asistente siempre bloquea repetir cuerda si hay alternativa — esta preferencia solo cambia cuál alternativa recomienda primero.</div>
+      </div>
+      <div class="field">
+        <label for="editorBpm">Tempo (BPM)</label>
+        <input type="number" id="editorBpm" value="90" min="20" max="300">
+      </div>
+      <div id="editorMsgs"></div>
+      <button class="btn-primary" id="editorSaveBtn">Guardar en mi librería</button>
+      <div class="btnbar" style="margin-top:10px;">
+        <button class="btn-ghost" id="editorClearBtn">Vaciar</button>
+      </div>
+      <div class="legend">
+        <span><b>4</b> Sol aguda</span>
+        <span><b>3</b> Do</span>
+        <span><b>2</b> Mi</span>
+        <span><b>1</b> La</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="transport">
+        <button class="btn-brass" id="editorPlayBtn" disabled>▶ Reproducir</button>
+        <button class="btn-ghost" id="editorStopBtn" disabled>■ Detener</button>
+      </div>
+      <div id="editorMount"></div>
+    </div>
+  </div>
+
+  <!-- ============ LIBRARY VIEW ============ -->
+  <div class="view" id="view-library">
+    <div class="content" style="grid-column: 1 / -1;">
+      <div class="library-toolbar">
+        <input type="text" id="librarySearch" class="sans" placeholder="Buscar por título…">
+        <button type="button" class="btn-ghost" id="importTabBtn">Importar (.json)</button>
+        <input type="file" id="importTabInput" accept="application/json,.json" style="display:none;">
+      </div>
+      <div class="library-grid" id="libraryGrid"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="install-banner sans" id="installBanner">
+  <span>Instalá Campanella en tu dispositivo para usarla sin conexión.</span>
+  <button type="button" class="btn-ghost" id="installDismissBtn">Ahora no</button>
+  <button type="button" class="btn-brass" id="installBtn">Instalar</button>
+</div>
+
+<footer class="app-footer">
+  Inspirado en el método campanella de Jon (jons-ukulele.com). Todo funciona en tu dispositivo: tu partitura y tu librería nunca salen del navegador.
+</footer>
+
+<script src="./js/engine.js"></script>
+<script src="./js/musicxml.js"></script>
+<script src="./js/render.js"></script>
+<script src="./js/audio.js"></script>
+<script src="./js/library.js"></script>
+<script src="./js/editor.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
