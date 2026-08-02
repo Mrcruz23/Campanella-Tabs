@@ -8,12 +8,12 @@
   const UNIT_PX = 46;
   const MIN_NOTE_PX = 24;
   const ROW_GAP = 22;
-  const SYSTEM_MAX_WIDTH = 1040;
+  const SYSTEM_MAX_WIDTH = 620; // target width for a single measure's row (was 1040 when 4 measures shared a line)
   const LEFT_MARGIN = 56;
   const RIGHT_MARGIN = 20;
-  const SYSTEM_VGAP = 46;
+  const SYSTEM_VGAP = 34;
   const TOP_MARGIN = 30;
-  const MEASURES_PER_LINE = 4;
+  const MEASURES_PER_LINE = 1; // one measure per row, stacked vertically with scroll — easier to read than 4-across on small screens
 
   /**
    * @param {Array} events - flat note/rest events, each with {midi,isRest,duration,measureIndex}
@@ -61,17 +61,28 @@
     const targetWidth = SYSTEM_MAX_WIDTH;
     systems.forEach(system => {
       if (system.width > 0 && system.items.length > 0) {
-        const scale = Math.max(0.55, Math.min(1.6, targetWidth / system.width));
+        // With one measure per line, a sparse measure (e.g. a single whole
+        // note) would otherwise get stretched to fill the full row width,
+        // spacing that one note absurdly far from the margin. Capping the
+        // upscale factor keeps sparse measures visually compact instead of
+        // artificially wide, while dense measures still get to use the
+        // full available width.
+        const scale = Math.max(0.55, Math.min(1.15, targetWidth / system.width));
         system.items.forEach(it => { it.w = it.w * scale; });
         system.width = system.width * scale;
       }
     });
 
-    const svgWidth = LEFT_MARGIN + RIGHT_MARGIN + SYSTEM_MAX_WIDTH;
+    const widestSystem = systems.reduce((max, s) => Math.max(max, s.width), 0);
+    const svgWidth = LEFT_MARGIN + RIGHT_MARGIN + Math.max(widestSystem, 200);
     const systemHeight = 3 * ROW_GAP;
     const totalHeight = TOP_MARGIN * 2 + systems.length * systemHeight + (systems.length - 1) * SYSTEM_VGAP + 10;
 
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${Math.max(totalHeight, 120)}" preserveAspectRatio="xMinYMin meet" font-family="Courier New, monospace" style="display:block; width:${svgWidth}px; max-width:none;">`;
+    // width:100% lets the SVG shrink to fit narrow (mobile) screens without
+    // horizontal scroll when the content is already narrow; max-width caps
+    // it at its natural size so it doesn't blow up huge on wide desktop
+    // screens either. The viewBox keeps everything crisp at any size.
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${Math.max(totalHeight, 120)}" preserveAspectRatio="xMinYMin meet" font-family="Courier New, monospace" style="display:block; width:100%; max-width:${svgWidth}px;">`;
     svg += `<rect x="0" y="0" width="${svgWidth}" height="${Math.max(totalHeight, 120)}" fill="${C.bg}"/>`;
 
     let cumulativeBeat = 0;

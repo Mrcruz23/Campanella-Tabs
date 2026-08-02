@@ -98,7 +98,18 @@
             if (isChord) {
               const prev = rawEvents[rawEvents.length - 1];
               if (prev && !isRest && midi !== null) {
-                if (prev.midi === null || midi > prev.midi) prev.midi = midi;
+                // Campanella plays one note at a time, so a chord collapses
+                // to its highest pitch (the melody note in most arrangements).
+                // Bug fixed here: tieStart/tieStop must travel WITH whichever
+                // pitch ends up chosen, not just accumulate from whichever
+                // chord-note happened to declare them — otherwise a tie on
+                // the note that gets discarded silently breaks the tie merge
+                // below (the two sides of the tie stop matching by pitch).
+                if (prev.midi === null || midi > prev.midi) {
+                  prev.midi = midi;
+                  prev.tieStart = tieStart;
+                  prev.tieStop = tieStop;
+                }
                 prev.duration = Math.max(prev.duration, duration);
               }
               continue;

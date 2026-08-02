@@ -291,6 +291,26 @@ footer.app-footer{
 .cand-tag.bad{ color:var(--red-bright); }
 .assist-note-explain{ font-size:.78rem; color:var(--ink-faint); line-height:1.5; }
 .assist-empty{ font-size:.85rem; color:var(--red-bright); }
+.assist-edit-row{
+  display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;
+  background:var(--bg-deep); border:1px solid var(--panel-border); border-radius:8px;
+  padding:10px 12px; margin-bottom:12px;
+}
+.assist-edit-row label{
+  display:flex; flex-direction:column; gap:4px; font-size:.72rem; color:var(--ink-faint); font-weight:600;
+}
+.assist-edit-row select{ padding:6px 8px; font-size:.82rem; min-width:64px; }
+.assist-dotted-label{ flex-direction:row !important; align-items:center; gap:6px !important; padding-bottom:7px; }
+.assist-dotted-label input{ width:auto; }
+.assist-delete{ margin-top:4px; width:100%; }
+
+.editor-tool-group-inline{ justify-content:flex-end; }
+.ed-dotted-label{
+  display:flex; align-items:center; gap:6px; font-size:.82rem; color:var(--ink-dim);
+  padding:9px 4px; font-weight:600; white-space:nowrap;
+}
+.ed-dotted-label input{ width:auto; }
+.ed-tie-toggle.active{ border-color:var(--brass-bright); background:rgba(228,193,112,.14); color:var(--brass-bright); }
 
 /* ---------- library view ---------- */
 .library-toolbar{

@@ -18,7 +18,10 @@
   ];
   const DIVISIONS = 4; // ticks per quarter note for manually-built scores (supports up to semicorchea)
 
-  function beatsToDuration(beats) { return Math.round(beats * DIVISIONS); }
+  function beatsToDuration(beats, dotted) {
+    const effectiveBeats = dotted ? beats * 1.5 : beats;
+    return Math.round(effectiveBeats * DIVISIONS);
+  }
 
   /**
    * TabEditor manages an in-memory list of events the user builds by hand,
@@ -38,6 +41,8 @@
     this.beatsPerMeasure = 4; // 4/4 default; editable via UI
     this.selectedIndex = null; // index of note currently shown in the assist panel
     this.pendingDurationBeats = 1; // "negra" by default
+    this.pendingDotted = false;
+    this.pendingTie = false; // when true, the next addNote() ties into the previous note if same pitch
     this._buildShell();
   }
 
@@ -49,6 +54,10 @@
           <select class="ed-duration">
             ${DURATIONS.map((d, i) => `<option value="${i}" ${d.beats === 1 ? 'selected' : ''}>${d.label}</option>`).join('')}
           </select>
+        </div>
+        <div class="editor-tool-group editor-tool-group-inline">
+          <label>&nbsp;</label>
+          <label class="ed-dotted-label"><input type="checkbox" class="ed-dotted"> Con puntillo (×1.5)</label>
         </div>
         <div class="editor-tool-group">
           <label>Compás</label>
@@ -64,6 +73,7 @@
           </div>
         </div>
         <button type="button" class="btn-ghost ed-add-rest">+ Silencio</button>
+        <button type="button" class="btn-ghost ed-tie-toggle" title="La próxima nota que agregues, si tiene la misma altura que la última, se fusiona en vez de sonar por separado.">🔗 Ligar con la siguiente</button>
         <button type="button" class="btn-ghost ed-undo" disabled>Deshacer última nota</button>
       </div>
       <div class="editor-grid-wrap"></div>
@@ -71,7 +81,7 @@
         <div class="assist-title">Asistente campanella</div>
         <div class="assist-body"></div>
       </div>
-      <div class="editor-hint">Elegí una nota musical y una duración, luego hacé clic en "Agregar nota" para colocarla al final. Para insertar en otra cuerda/traste, usá las opciones sugeridas en el asistente.</div>
+      <div class="editor-hint">Elegí una nota musical y una duración, luego hacé clic en "Agregar nota" para colocarla al final. Tocá "Ligar con la siguiente" antes de agregar una nota de la misma altura para fusionarlas en una sola nota más larga (ligadura). Hacé clic en cualquier nota ya puesta para editarla: cambiar su altura, duración o digitación.</div>
       <div class="note-picker">
         <label>Nota a agregar</label>
         <div class="note-picker-row">
@@ -91,6 +101,15 @@
 
     this.mount.querySelector('.ed-duration').addEventListener('change', (e) => {
       this.pendingDurationBeats = DURATIONS[parseInt(e.target.value, 10)].beats;
+    });
+    this.mount.querySelector('.ed-dotted').addEventListener('change', (e) => {
+      this.pendingDotted = e.target.checked;
+    });
+    const tieBtn = this.mount.querySelector('.ed-tie-toggle');
+    tieBtn.addEventListener('click', () => {
+      this.pendingTie = !this.pendingTie;
+      tieBtn.classList.toggle('active', this.pendingTie);
+      tieBtn.textContent = this.pendingTie ? '🔗 Ligando… (tocá para cancelar)' : '🔗 Ligar con la siguiente';
     });
     const updateMeter = () => {
       const num = Math.max(1, parseInt(this.mount.querySelector('.ed-meter-num').value, 10) || 4);
@@ -133,7 +152,30 @@
   };
 
   TabEditor.prototype.addNote = function (midi, forcedFingering) {
-    const duration = beatsToDuration(this.pendingDurationBeats);
+    const duration = beatsToDuration(this.pendingDurationBeats, this.pendingDotted);
+    const lastIdx = this.events.length - 1;
+    const lastEv = lastIdx >= 0 ? this.events[lastIdx] : null;
+
+    // Tie: if requested and the previous note has the same pitch, merge
+    // durations into that note instead of creating a new one — mirrors how
+    // the MusicXML parser fuses tie start/stop pairs into a single event.
+    if (this.pendingTie && lastEv && !lastEv.isRest && lastEv.midi === midi) {
+      lastEv.duration += duration;
+      this._resetTieToggle();
+      this._afterMutate();
+      this.selectedIndex = lastIdx;
+      this._renderAssist();
+      return;
+    }
+    let tieFailed = false;
+    if (this.pendingTie) {
+      // Nothing valid to tie into (no previous note, previous is a rest, or
+      // a different pitch) — fall through and add normally, but surface it
+      // to the caller rather than silently dropping the user's intent.
+      tieFailed = true;
+      this._resetTieToggle();
+    }
+
     const measureIndex = this._currentMeasureIndex();
     const ev = { midi, isRest: false, duration, measureIndex };
     this.events.push(ev);
@@ -145,16 +187,26 @@
       fingering = rec ? { string: rec.string, fret: rec.fret } : null;
     }
     this.chosen.push(fingering);
-    this._afterMutate();
+    this._afterMutate(tieFailed ? 'La nota anterior no tenía la misma altura (o no había nota previa), así que no se pudo ligar; se agregó como nota independiente.' : null);
     this.selectedIndex = this.events.length - 1;
     this._renderAssist();
   };
 
+  TabEditor.prototype._resetTieToggle = function () {
+    this.pendingTie = false;
+    const tieBtn = this.mount.querySelector('.ed-tie-toggle');
+    if (tieBtn) {
+      tieBtn.classList.remove('active');
+      tieBtn.textContent = '🔗 Ligar con la siguiente';
+    }
+  };
+
   TabEditor.prototype.addRest = function () {
-    const duration = beatsToDuration(this.pendingDurationBeats);
+    const duration = beatsToDuration(this.pendingDurationBeats, this.pendingDotted);
     const measureIndex = this._currentMeasureIndex();
     this.events.push({ midi: null, isRest: true, duration, measureIndex });
     this.chosen.push(null);
+    if (this.pendingTie) this._resetTieToggle(); // a rest can't be tied; cancel the pending state instead of applying it wrongly
     this._afterMutate();
   };
 
@@ -181,6 +233,50 @@
     return null;
   };
 
+  const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  function midiToNameOctave(midi) {
+    const pc = ((midi % 12) + 12) % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    return { name: NOTE_NAMES[pc], octave };
+  }
+  function nameOctaveToMidi(name, octave) {
+    return (octave + 1) * 12 + E.PITCH_CLASS[name.replace('#', '')] + (name.includes('#') ? 1 : 0);
+  }
+  function closestDurationIndex(rawBeats) {
+    // rawBeats may include a x1.5 dotted factor baked in; find the plain
+    // duration whose ×1 or ×1.5 form is closest, used to preselect the
+    // duration/dotted controls when editing an existing note.
+    let best = { i: 2, dotted: false, diff: Infinity };
+    DURATIONS.forEach((d, i) => {
+      [false, true].forEach(dotted => {
+        const val = dotted ? d.beats * 1.5 : d.beats;
+        const diff = Math.abs(val - rawBeats);
+        if (diff < best.diff) best = { i, dotted, diff };
+      });
+    });
+    return best;
+  }
+
+  /**
+   * Re-evaluates fingering for every note from `fromIndex` onward, in order,
+   * as if each were being freshly placed — used after editing a note's pitch
+   * or duration in the middle of the piece, since the notes that follow may
+   * have been fingered relative to the OLD pitch at this position. Notes the
+   * user has manually overridden are left untouched by not being in scope
+   * of this pass unless explicitly requested (kept simple: only the edited
+   * note itself is re-suggested; downstream notes keep their fingering
+   * unless the user reopens them, since silently moving someone else's
+   * chosen fingering without asking would be more surprising than helpful).
+   */
+  TabEditor.prototype._resuggestAt = function (index) {
+    const ev = this.events[index];
+    if (ev.isRest) { this.chosen[index] = null; return; }
+    const prev = this._prevChosenBefore(index);
+    const evalRes = E.evaluatePlacement(ev.midi, this.maxFret, prev);
+    const rec = evalRes.candidates.find(c => c.recommended) || evalRes.candidates.find(c => c.allowed);
+    this.chosen[index] = rec ? { string: rec.string, fret: rec.fret } : null;
+  };
+
   TabEditor.prototype._renderAssist = function () {
     const idx = this.selectedIndex;
     if (idx === null || idx === undefined || !this.events[idx] || this.events[idx].isRest) {
@@ -190,11 +286,34 @@
     const ev = this.events[idx];
     const prev = this._prevChosenBefore(idx);
     const evalRes = E.evaluatePlacement(ev.midi, this.maxFret, prev);
-    const noteName = E.midiToName(ev.midi);
+    const { name: curName, octave: curOctave } = midiToNameOctave(ev.midi);
+    const durInfo = closestDurationIndex(ev.duration / DIVISIONS);
 
-    let html = `<div class="assist-note">Nota seleccionada: <b>${noteName}</b> (posición ${idx + 1})</div>`;
+    let html = `<div class="assist-note">Editando nota en posición <b>${idx + 1}</b></div>`;
+
+    html += `<div class="assist-edit-row">
+      <label>Nota
+        <select class="assist-note-name">
+          ${NOTE_NAMES.map(n => `<option value="${n}" ${n === curName ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+      </label>
+      <label>Octava
+        <select class="assist-note-octave">
+          ${[2, 3, 4, 5, 6].map(o => `<option value="${o}" ${o === curOctave ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </label>
+      <label>Duración
+        <select class="assist-duration">
+          ${DURATIONS.map((d, i) => `<option value="${i}" ${i === durInfo.i ? 'selected' : ''}>${d.label}</option>`).join('')}
+        </select>
+      </label>
+      <label class="assist-dotted-label">
+        <input type="checkbox" class="assist-dotted" ${durInfo.dotted ? 'checked' : ''}> Puntillo
+      </label>
+    </div>`;
+
     if (evalRes.candidates.length === 0) {
-      html += `<div class="assist-empty">Esta nota no tiene ninguna digitación posible dentro del traste máximo (${this.maxFret}). Subí el traste máximo o transportá la pieza.</div>`;
+      html += `<div class="assist-empty">Esta nota no tiene ninguna digitación posible dentro del traste máximo (${this.maxFret}). Subí el traste máximo, transportá la pieza, o elegí otra nota arriba.</div>`;
     } else {
       html += `<div class="assist-candidates">`;
       evalRes.candidates.forEach(c => {
@@ -215,8 +334,29 @@
         html += `<div class="assist-note-explain">Las opciones bloqueadas repetirían la cuerda de la nota anterior habiendo una alternativa — eso rompe el efecto campanella (las notas se cortarían entre sí en vez de sonar superpuestas).</div>`;
       }
     }
+    html += `<button type="button" class="btn-danger assist-delete">Eliminar esta nota</button>`;
+
     this.assistBody.innerHTML = html;
     this.assistPanel.style.display = 'block';
+
+    const applyPitchOrDurationChange = () => {
+      const name = this.assistBody.querySelector('.assist-note-name').value;
+      const octave = parseInt(this.assistBody.querySelector('.assist-note-octave').value, 10);
+      const durIdx = parseInt(this.assistBody.querySelector('.assist-duration').value, 10);
+      const dotted = this.assistBody.querySelector('.assist-dotted').checked;
+      const newMidi = nameOctaveToMidi(name, octave);
+      const newDuration = beatsToDuration(DURATIONS[durIdx].beats, dotted);
+      const pitchChanged = newMidi !== ev.midi;
+      ev.midi = newMidi;
+      ev.duration = newDuration;
+      if (pitchChanged) this._resuggestAt(idx); // old fingering may no longer fit the new pitch at all
+      this._afterMutate();
+      this._renderAssist();
+    };
+    this.assistBody.querySelector('.assist-note-name').addEventListener('change', applyPitchOrDurationChange);
+    this.assistBody.querySelector('.assist-note-octave').addEventListener('change', applyPitchOrDurationChange);
+    this.assistBody.querySelector('.assist-duration').addEventListener('change', applyPitchOrDurationChange);
+    this.assistBody.querySelector('.assist-dotted').addEventListener('change', applyPitchOrDurationChange);
 
     this.assistBody.querySelectorAll('.assist-cand:not(.blocked)').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -227,12 +367,20 @@
         this._renderAssist();
       });
     });
+
+    this.assistBody.querySelector('.assist-delete').addEventListener('click', () => {
+      this.events.splice(idx, 1);
+      this.chosen.splice(idx, 1);
+      this.selectedIndex = null;
+      this.assistPanel.style.display = 'none';
+      this._afterMutate();
+    });
   };
 
-  TabEditor.prototype._afterMutate = function () {
+  TabEditor.prototype._afterMutate = function (notice) {
     this.mount.querySelector('.ed-undo').disabled = this.events.length === 0;
     this._renderGrid();
-    this.onChange({ events: this.events, chosen: this.chosen });
+    this.onChange({ events: this.events, chosen: this.chosen, notice: notice || null });
   };
 
   TabEditor.prototype._renderGrid = function () {

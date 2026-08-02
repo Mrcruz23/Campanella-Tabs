@@ -201,7 +201,10 @@
   const editor = new Ed.TabEditor(editorMount, {
     maxFret: 12,
     weightMode: 'balanced',
-    onChange: () => { $('editorPlayBtn').disabled = editor.events.length === 0; }
+    onChange: (state) => {
+      $('editorPlayBtn').disabled = editor.events.length === 0;
+      if (state && state.notice) showMsg($('editorMsgs'), state.notice, 'warn');
+    }
   });
   let editorNotePositions = [];
   let editorTabId = null; // set when editing an existing library tab
