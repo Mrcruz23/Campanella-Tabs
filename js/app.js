@@ -248,6 +248,7 @@
       weightMode: editor.weightMode,
       events: editor.events,
       chosen: editor.chosen,
+      repeatMarks: editor.repeatMarks,
       source: 'manual'
     };
     const saved = await L.saveTab(tab);
@@ -307,7 +308,7 @@
     const tab = await L.getTab(id);
     if (!tab) return;
     showView('editor');
-    editor.loadFrom(tab.events, tab.chosen, tab.maxFret, tab.weightMode);
+    editor.loadFrom(tab.events, tab.chosen, tab.maxFret, tab.weightMode, tab.repeatMarks);
     editorTabId = tab.id;
     $('editorTitleInput').value = tab.title || '';
     $('editorBpm').value = tab.tempo || 90;

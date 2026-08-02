@@ -19,15 +19,17 @@
    * @param {Array} events - flat note/rest events, each with {midi,isRest,duration,measureIndex}
    * @param {Array} chosen - fingering per event index, {string,fret} or null
    * @param {number} divisions - MusicXML divisions-per-quarter-note (ticks)
-   * @param {object} opts - { editable:boolean, colors:{bg,line,ink,accent,bad} }
+   * @param {object} opts - { editable:boolean, colors:{bg,line,ink,accent,bad,selected}, repeatMarks:{measureIndex:'start'|'end'}, selectedMeasures:number[]|null }
    * @returns {{ svg:string, notePositions: Array<{index,startBeat,durBeat}> }}
    */
   function buildTabSVG(events, chosen, divisions, opts) {
     opts = opts || {};
     const editable = !!opts.editable;
     const C = Object.assign({
-      bg: '#FBF7EC', line: '#B79E6C', ink: '#2B2013', accent: '#D9A94E', bad: '#9C3B2E', dim: '#7a6a4b'
+      bg: '#FBF7EC', line: '#B79E6C', ink: '#2B2013', accent: '#D9A94E', bad: '#9C3B2E', dim: '#7a6a4b', selected: '#4C7C68'
     }, opts.colors || {});
+    const repeatMarks = opts.repeatMarks || {};
+    const selectedMeasures = opts.selectedMeasures ? new Set(opts.selectedMeasures) : null;
 
     const notePositions = [];
     const beats = events.map(e => e.duration / divisions);
@@ -54,9 +56,9 @@
         meas.items.forEach((it) => { items.push({ index: it.index, w: it.w }); });
         width += meas.width;
       });
-      systems.push({ items, width });
+      systems.push({ items, width, measureIndex: groupMeasures[0] ? groupMeasures[0].measureIndex : null });
     }
-    if (systems.length === 0) systems.push({ items: [], width: 0 });
+    if (systems.length === 0) systems.push({ items: [], width: 0, measureIndex: null });
 
     const targetWidth = SYSTEM_MAX_WIDTH;
     systems.forEach(system => {
@@ -93,6 +95,12 @@
       const sy = TOP_MARGIN + sIdx * (systemHeight + SYSTEM_VGAP);
       const lineYs = E.DISPLAY_ORDER.map((s, li) => sy + li * ROW_GAP);
 
+      // Selection highlight: a soft background band behind the whole
+      // measure row when it's part of the current selection.
+      if (selectedMeasures && system.measureIndex !== null && selectedMeasures.has(system.measureIndex)) {
+        svg += `<rect x="${LEFT_MARGIN - 14}" y="${sy - 16}" width="${system.width + 30}" height="${systemHeight + 26}" rx="6" fill="${C.selected}" opacity="0.16"/>`;
+      }
+
       svg += `<text x="12" y="${sy + 2}" font-size="10" fill="${C.ink}" font-weight="bold">T</text>` +
              `<text x="12" y="${sy + ROW_GAP + 2}" font-size="10" fill="${C.ink}" font-weight="bold">A</text>` +
              `<text x="12" y="${sy + 2 * ROW_GAP + 2}" font-size="10" fill="${C.ink}" font-weight="bold">B</text>`;
@@ -105,11 +113,40 @@
         }
       });
 
+      // Repeat-bar marks: purely visual notation convention (thick double
+      // line + two dots), drawn at the very start or end of the measure's
+      // row. They don't correspond to any event and never affect playback.
+      const mark = system.measureIndex !== null ? repeatMarks[system.measureIndex] : null;
+      if (mark === 'start') {
+        svg += `<line x1="${LEFT_MARGIN - 12}" y1="${lineYs[0]}" x2="${LEFT_MARGIN - 12}" y2="${lineYs[3]}" stroke="${C.ink}" stroke-width="2.5"/>` +
+               `<line x1="${LEFT_MARGIN - 7}" y1="${lineYs[0]}" x2="${LEFT_MARGIN - 7}" y2="${lineYs[3]}" stroke="${C.ink}" stroke-width="1"/>` +
+               `<circle cx="${LEFT_MARGIN - 2}" cy="${(lineYs[1] + lineYs[0]) / 2}" r="2" fill="${C.ink}"/>` +
+               `<circle cx="${LEFT_MARGIN - 2}" cy="${(lineYs[3] + lineYs[2]) / 2}" r="2" fill="${C.ink}"/>`;
+      }
+      if (mark === 'end') {
+        const endX = LEFT_MARGIN + system.width + 10;
+        svg += `<line x1="${endX}" y1="${lineYs[0]}" x2="${endX}" y2="${lineYs[3]}" stroke="${C.ink}" stroke-width="2.5"/>` +
+               `<line x1="${endX - 5}" y1="${lineYs[0]}" x2="${endX - 5}" y2="${lineYs[3]}" stroke="${C.ink}" stroke-width="1"/>` +
+               `<circle cx="${endX - 10}" cy="${(lineYs[1] + lineYs[0]) / 2}" r="2" fill="${C.ink}"/>` +
+               `<circle cx="${endX - 10}" cy="${(lineYs[3] + lineYs[2]) / 2}" r="2" fill="${C.ink}"/>`;
+      }
+
       let x = LEFT_MARGIN;
       if (system.items.length === 0 && editable) {
         svg += `<g class="empty-slot" data-idx="0" data-measure="${sIdx * MEASURES_PER_LINE}">` +
           `<rect x="${LEFT_MARGIN}" y="${sy - 10}" width="60" height="${systemHeight + 20}" fill="transparent"/></g>`;
       }
+
+      // Invisible hit-rect covering the whole measure row, drawn BEFORE the
+      // notes so it doesn't intercept clicks meant for individual notes in
+      // normal editing mode; in selection mode this is what the editor
+      // actually binds its click handler to (see editor.js _renderGrid),
+      // so the whole measure — including empty beats and rests — is
+      // clickable, not just the notes.
+      if (editable && system.measureIndex !== null) {
+        svg += `<rect class="measure-hit" data-measure="${system.measureIndex}" x="${LEFT_MARGIN - 14}" y="${sy - 16}" width="${system.width + 30}" height="${systemHeight + 26}" fill="${C.bg}" opacity="0.001"/>`;
+      }
+
       system.items.forEach((item, ii) => {
         const i = item.index;
         const ev = events[i];

@@ -76,12 +76,7 @@
         <button type="button" class="btn-ghost ed-tie-toggle" title="La próxima nota que agregues, si tiene la misma altura que la última, se fusiona en vez de sonar por separado.">🔗 Ligar con la siguiente</button>
         <button type="button" class="btn-ghost ed-undo" disabled>Deshacer última nota</button>
       </div>
-      <div class="editor-grid-wrap"></div>
-      <div class="assist-panel" style="display:none;">
-        <div class="assist-title">Asistente campanella</div>
-        <div class="assist-body"></div>
-      </div>
-      <div class="editor-hint">Elegí una nota musical y una duración, luego hacé clic en "Agregar nota" para colocarla al final. Tocá "Ligar con la siguiente" antes de agregar una nota de la misma altura para fusionarlas en una sola nota más larga (ligadura). Hacé clic en cualquier nota ya puesta para editarla: cambiar su altura, duración o digitación.</div>
+
       <div class="note-picker">
         <label>Nota a agregar</label>
         <div class="note-picker-row">
@@ -94,10 +89,33 @@
           <button type="button" class="btn-brass ed-add-note">+ Agregar nota</button>
         </div>
       </div>
+
+      <div class="copy-toolbar">
+        <button type="button" class="btn-ghost ed-select-mode">Seleccionar compases</button>
+        <button type="button" class="btn-ghost ed-add-repeat-start" title="Marca visual de inicio de repetición (║:), no afecta la reproducción.">║: Inicio repetición</button>
+        <button type="button" class="btn-ghost ed-add-repeat-end" title="Marca visual de fin de repetición (:║), no afecta la reproducción.">:║ Fin repetición</button>
+        <span class="copy-toolbar-selection-info"></span>
+        <div class="copy-toolbar-actions" style="display:none;">
+          <button type="button" class="btn-ghost ed-copy-measures">Copiar</button>
+          <button type="button" class="btn-brass ed-paste-measures" disabled>Pegar al final</button>
+          <button type="button" class="btn-ghost ed-cancel-select">Cancelar</button>
+        </div>
+      </div>
+
+      <div class="editor-grid-wrap"></div>
+
+      <div class="assist-panel" style="display:none;">
+        <div class="assist-title">Asistente campanella</div>
+        <div class="assist-body"></div>
+      </div>
     `;
     this.gridWrap = this.mount.querySelector('.editor-grid-wrap');
     this.assistPanel = this.mount.querySelector('.assist-panel');
     this.assistBody = this.mount.querySelector('.assist-body');
+    this.selectionMode = false;
+    this.selectedMeasures = []; // sorted array of measureIndex values currently highlighted
+    this.copiedMeasures = null; // events/chosen slice ready to paste, or null
+    this.repeatMarks = {}; // measureIndex -> 'start' | 'end' (purely visual)
 
     this.mount.querySelector('.ed-duration').addEventListener('change', (e) => {
       this.pendingDurationBeats = DURATIONS[parseInt(e.target.value, 10)].beats;
@@ -131,6 +149,113 @@
       const midi = (octave + 1) * 12 + E.PITCH_CLASS[name.replace('#', '')] + (name.includes('#') ? 1 : 0);
       this.addNote(midi);
     });
+
+    this.mount.querySelector('.ed-select-mode').addEventListener('click', () => this.toggleSelectionMode());
+    this.mount.querySelector('.ed-cancel-select').addEventListener('click', () => this.exitSelectionMode());
+    this.mount.querySelector('.ed-copy-measures').addEventListener('click', () => this.copySelectedMeasures());
+    this.mount.querySelector('.ed-paste-measures').addEventListener('click', () => this.pasteMeasures());
+    this.mount.querySelector('.ed-add-repeat-start').addEventListener('click', () => this.toggleRepeatMarkOnSelected('start'));
+    this.mount.querySelector('.ed-add-repeat-end').addEventListener('click', () => this.toggleRepeatMarkOnSelected('end'));
+  };
+
+  /* ============================================================
+     Measure selection, copy/paste, and repeat marks
+     ============================================================ */
+
+  TabEditor.prototype.toggleSelectionMode = function () {
+    this.selectionMode = !this.selectionMode;
+    this.selectedMeasures = [];
+    this.assistPanel.style.display = 'none';
+    this.selectedIndex = null;
+    const btn = this.mount.querySelector('.ed-select-mode');
+    btn.classList.toggle('active', this.selectionMode);
+    btn.textContent = this.selectionMode ? 'Saliendo… tocá compases' : 'Seleccionar compases';
+    this.mount.querySelector('.copy-toolbar-actions').style.display = this.selectionMode ? 'flex' : 'none';
+    this._updateSelectionInfo();
+    this._renderGrid();
+  };
+
+  TabEditor.prototype.exitSelectionMode = function () {
+    this.selectionMode = false;
+    this.selectedMeasures = [];
+    const btn = this.mount.querySelector('.ed-select-mode');
+    btn.classList.remove('active');
+    btn.textContent = 'Seleccionar compases';
+    this.mount.querySelector('.copy-toolbar-actions').style.display = 'none';
+    this._updateSelectionInfo();
+    this._renderGrid();
+  };
+
+  TabEditor.prototype._updateSelectionInfo = function () {
+    const info = this.mount.querySelector('.copy-toolbar-selection-info');
+    const pasteBtn = this.mount.querySelector('.ed-paste-measures');
+    if (!this.selectionMode) { info.textContent = ''; return; }
+    const n = this.selectedMeasures.length;
+    info.textContent = n === 0
+      ? 'Tocá uno o más compases en la tablatura para seleccionarlos.'
+      : `${n} compás${n > 1 ? 'es' : ''} seleccionado${n > 1 ? 's' : ''}.`;
+    if (pasteBtn) pasteBtn.disabled = !this.copiedMeasures;
+  };
+
+  /** Called from the grid's click handler when in selection mode. Toggles one measure in/out of the selection. */
+  TabEditor.prototype.toggleMeasureSelected = function (measureIndex) {
+    const pos = this.selectedMeasures.indexOf(measureIndex);
+    if (pos >= 0) this.selectedMeasures.splice(pos, 1);
+    else { this.selectedMeasures.push(measureIndex); this.selectedMeasures.sort((a, b) => a - b); }
+    this._updateSelectionInfo();
+    this._renderGrid();
+  };
+
+  TabEditor.prototype.copySelectedMeasures = function () {
+    if (!this.selectedMeasures.length) return;
+    const selectedSet = new Set(this.selectedMeasures);
+    const indices = [];
+    this.events.forEach((ev, i) => { if (selectedSet.has(ev.measureIndex)) indices.push(i); });
+    if (!indices.length) return;
+    this.copiedMeasures = {
+      events: indices.map(i => Object.assign({}, this.events[i])),
+      chosen: indices.map(i => this.chosen[i] ? Object.assign({}, this.chosen[i]) : null),
+      measureCount: this.selectedMeasures.length
+    };
+    this.mount.querySelector('.ed-paste-measures').disabled = false;
+    this._updateSelectionInfo();
+    const info = this.mount.querySelector('.copy-toolbar-selection-info');
+    info.textContent = `Copiados ${this.copiedMeasures.measureCount} compás(es). Tocá "Pegar al final" cuando quieras.`;
+  };
+
+  TabEditor.prototype.pasteMeasures = function () {
+    if (!this.copiedMeasures) return;
+    // Re-stamp measureIndex on the pasted copy so it continues the
+    // numbering at the end of the piece, preserving the internal measure
+    // boundaries from the original selection (so a 2-measure copy still
+    // reads as 2 measures when pasted, not one long one).
+    const startMeasure = this._currentMeasureIndex();
+    const srcMeasures = this.copiedMeasures.events.map(e => e.measureIndex);
+    const uniqueSrcMeasures = Array.from(new Set(srcMeasures)).sort((a, b) => a - b);
+    const remap = {};
+    uniqueSrcMeasures.forEach((m, i) => { remap[m] = startMeasure + i; });
+
+    this.copiedMeasures.events.forEach((ev, i) => {
+      this.events.push(Object.assign({}, ev, { measureIndex: remap[ev.measureIndex] }));
+      this.chosen.push(this.copiedMeasures.chosen[i] ? Object.assign({}, this.copiedMeasures.chosen[i]) : null);
+    });
+    this._afterMutate(`Se pegaron ${this.copiedMeasures.measureCount} compás(es) al final.`);
+    this.exitSelectionMode();
+  };
+
+  /**
+   * Repeat-bar marks are a purely visual annotation on a measure boundary
+   * (barline style), not part of the musical event stream — they don't
+   * affect playback duration or fingering, only how render.js draws the
+   * barline. Toggling the same mark on an already-marked measure removes it.
+   */
+  TabEditor.prototype.toggleRepeatMarkOnSelected = function (kind) {
+    if (!this.selectedMeasures.length) return;
+    this.selectedMeasures.forEach(m => {
+      if (this.repeatMarks[m] === kind) delete this.repeatMarks[m];
+      else this.repeatMarks[m] = kind;
+    });
+    this._renderGrid();
   };
 
   TabEditor.prototype._currentMeasureIndex = function () {
@@ -390,33 +515,68 @@
     }
     const { svg } = R.buildTabSVG(this.events, this.chosen, DIVISIONS, {
       editable: true,
-      colors: { bg: '#1B1710', line: '#5c4f3a', ink: '#EDE3CC', accent: '#C9A24B', bad: '#D97D6C', dim: '#9c8b6a' }
+      colors: { bg: '#1B1710', line: '#5c4f3a', ink: '#EDE3CC', accent: '#C9A24B', bad: '#D97D6C', dim: '#9c8b6a', selected: '#4C7C68' },
+      repeatMarks: this.repeatMarks,
+      selectedMeasures: this.selectionMode ? this.selectedMeasures : null
     });
     this.gridWrap.innerHTML = svg;
-    this.gridWrap.querySelectorAll('.note-num.editable').forEach(g => {
-      g.style.cursor = 'pointer';
-      g.addEventListener('click', () => {
-        const idx = parseInt(g.getAttribute('data-idx'), 10);
-        this.selectNote(idx);
+
+    if (this.selectionMode) {
+      // In selection mode, clicking anywhere on a measure (note or empty
+      // beat) toggles that whole measure — handled via a transparent
+      // per-measure hit-rect that render.js draws behind the notes, so
+      // clicking works even on rests or empty space within the measure.
+      this.gridWrap.querySelectorAll('.measure-hit').forEach(g => {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', () => {
+          const m = parseInt(g.getAttribute('data-measure'), 10);
+          this.toggleMeasureSelected(m);
+        });
       });
-    });
+    } else {
+      this.gridWrap.querySelectorAll('.note-num.editable').forEach(g => {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', () => {
+          const idx = parseInt(g.getAttribute('data-idx'), 10);
+          this.selectNote(idx);
+        });
+      });
+    }
   };
 
-  TabEditor.prototype.loadFrom = function (events, chosen, maxFret, weightMode) {
+  TabEditor.prototype.loadFrom = function (events, chosen, maxFret, weightMode, repeatMarks) {
     this.events = events.map(e => Object.assign({}, e));
     this.chosen = chosen.map(c => c ? Object.assign({}, c) : null);
     if (maxFret) this.maxFret = maxFret;
     if (weightMode) this.weightMode = weightMode;
+    this.repeatMarks = repeatMarks ? Object.assign({}, repeatMarks) : {};
+    this.selectionMode = false;
+    this.selectedMeasures = [];
+    this.copiedMeasures = null;
     this.selectedIndex = null;
     this.assistPanel.style.display = 'none';
+    const selBtn = this.mount.querySelector('.ed-select-mode');
+    if (selBtn) { selBtn.classList.remove('active'); selBtn.textContent = 'Seleccionar compases'; }
+    const actionsEl = this.mount.querySelector('.copy-toolbar-actions');
+    if (actionsEl) actionsEl.style.display = 'none';
+    this._updateSelectionInfo();
     this._afterMutate();
   };
 
   TabEditor.prototype.clear = function () {
     this.events = [];
     this.chosen = [];
+    this.repeatMarks = {};
+    this.selectionMode = false;
+    this.selectedMeasures = [];
+    this.copiedMeasures = null;
     this.selectedIndex = null;
     this.assistPanel.style.display = 'none';
+    const selBtn = this.mount.querySelector('.ed-select-mode');
+    if (selBtn) { selBtn.classList.remove('active'); selBtn.textContent = 'Seleccionar compases'; }
+    const actionsEl = this.mount.querySelector('.copy-toolbar-actions');
+    if (actionsEl) actionsEl.style.display = 'none';
+    this._updateSelectionInfo();
     this._afterMutate();
   };
 
