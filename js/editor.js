@@ -36,9 +36,13 @@
     this.maxFret = (opts && opts.maxFret) || 12;
     this.weightMode = (opts && opts.weightMode) || 'balanced';
     this.onChange = (opts && opts.onChange) || function () {};
+    this.onPlayNote = (opts && opts.onPlayNote) || null; // (midi) => void — "listen to just this note"
+    this.onPlayFrom = (opts && opts.onPlayFrom) || null; // (index) => void — "play from this point onward"
     this.events = [];      // {midi,isRest,duration,measureIndex}
     this.chosen = [];      // {string,fret}|null, parallel to events
-    this.beatsPerMeasure = 4; // 4/4 default; editable via UI
+    this.beatsPerMeasure = 4; // 4/4 default; editable via UI (derived from meterNum/meterDen below)
+    this.meterNum = 4; // kept alongside beatsPerMeasure so the UI (and saved tabs) can restore the exact "9/8" the user picked, not just its beat-count equivalent
+    this.meterDen = 4;
     this.selectedIndex = null; // index of note currently shown in the assist panel
     this.pendingDurationBeats = 1; // "negra" by default
     this.pendingDotted = false;
@@ -137,7 +141,10 @@
       // (9 eighth notes), not 9 — any time signature works, not just the
       // handful that used to be hardcoded.
       this.beatsPerMeasure = num * (4 / den);
+      this.meterNum = num;
+      this.meterDen = den;
     };
+    this._updateMeterFromInputs = updateMeter; // exposed so loadFrom can re-sync the <input>/<select> without duplicating this logic
     this.mount.querySelector('.ed-meter-num').addEventListener('input', updateMeter);
     this.mount.querySelector('.ed-meter-den').addEventListener('change', updateMeter);
     updateMeter();
@@ -459,6 +466,10 @@
         html += `<div class="assist-note-explain">Las opciones bloqueadas repetirían la cuerda de la nota anterior habiendo una alternativa — eso rompe el efecto campanella (las notas se cortarían entre sí en vez de sonar superpuestas).</div>`;
       }
     }
+    html += `<div class="assist-play-row">
+      <button type="button" class="btn-ghost assist-play-note">🔊 Escuchar esta nota</button>
+      <button type="button" class="btn-brass assist-play-from">▶ Reproducir desde acá</button>
+    </div>`;
     html += `<button type="button" class="btn-danger assist-delete">Eliminar esta nota</button>`;
 
     this.assistBody.innerHTML = html;
@@ -499,6 +510,13 @@
       this.selectedIndex = null;
       this.assistPanel.style.display = 'none';
       this._afterMutate();
+    });
+
+    this.assistBody.querySelector('.assist-play-note').addEventListener('click', () => {
+      if (this.onPlayNote) this.onPlayNote(ev.midi);
+    });
+    this.assistBody.querySelector('.assist-play-from').addEventListener('click', () => {
+      if (this.onPlayFrom) this.onPlayFrom(idx);
     });
   };
 
@@ -544,7 +562,7 @@
     }
   };
 
-  TabEditor.prototype.loadFrom = function (events, chosen, maxFret, weightMode, repeatMarks) {
+  TabEditor.prototype.loadFrom = function (events, chosen, maxFret, weightMode, repeatMarks, meter) {
     this.events = events.map(e => Object.assign({}, e));
     this.chosen = chosen.map(c => c ? Object.assign({}, c) : null);
     if (maxFret) this.maxFret = maxFret;
@@ -560,6 +578,21 @@
     const actionsEl = this.mount.querySelector('.copy-toolbar-actions');
     if (actionsEl) actionsEl.style.display = 'none';
     this._updateSelectionInfo();
+
+    // Restore the time signature the piece was actually built with. Without
+    // this, the UI silently fell back to whatever 4/4 default was left over
+    // in the <input>/<select> from the previous session — the saved tab's
+    // measure boundaries were fine, but any NEW note the user added would
+    // be split into measures using the wrong meter (e.g. 9/8 pieces would
+    // start acting like 4/4 again after reopening).
+    const num = (meter && meter.num) || 4;
+    const den = (meter && meter.den) || 4;
+    const numInput = this.mount.querySelector('.ed-meter-num');
+    const denSelect = this.mount.querySelector('.ed-meter-den');
+    if (numInput) numInput.value = String(num);
+    if (denSelect) denSelect.value = String(den);
+    if (this._updateMeterFromInputs) this._updateMeterFromInputs();
+
     this._afterMutate();
   };
 
@@ -581,7 +614,7 @@
   };
 
   TabEditor.prototype.getState = function () {
-    return { events: this.events, chosen: this.chosen, divisions: DIVISIONS };
+    return { events: this.events, chosen: this.chosen, divisions: DIVISIONS, meter: { num: this.meterNum, den: this.meterDen } };
   };
 
   global.CampanellaEditor = { TabEditor, DIVISIONS, DURATIONS };

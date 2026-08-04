@@ -35,6 +35,7 @@
   let fingering = null;
   let genNotePositions = [];
   let currentFileName = '';
+  let genPlayFromBeat = 0; // 0 = play from the top; set by clicking a note in the tab
 
   const fileInput = $('fileInput');
   const dropzone = $('dropzone');
@@ -127,6 +128,27 @@
     });
     genNotePositions = notePositions;
     $('tabwrap').innerHTML = svg;
+    genPlayFromBeat = 0;
+    updateGenPlayFromIndicator();
+
+    // Clicking a note picks it as the playback start point, so the user can
+    // jump straight to a section instead of waiting through everything
+    // before it. Only pitched notes are clickable targets (rests/✕ marks
+    // have no note-num.editable class here since this SVG isn't in editable
+    // mode — but note-num elements still exist for pitched notes, so bind
+    // directly to those).
+    document.querySelectorAll('#tabwrap .note-num[data-idx]').forEach(g => {
+      g.style.cursor = 'pointer';
+      g.addEventListener('click', () => {
+        const idx = parseInt(g.getAttribute('data-idx'), 10);
+        const np = genNotePositions.find(n => n.index === idx);
+        if (!np) return;
+        genPlayFromBeat = np.startBeat;
+        updateGenPlayFromIndicator();
+        document.querySelectorAll('#tabwrap .note-num.play-from-marker').forEach(el => el.classList.remove('play-from-marker'));
+        g.classList.add('play-from-marker');
+      });
+    });
 
     $('emptyState').style.display = 'none';
     $('resultArea').style.display = 'block';
@@ -142,18 +164,34 @@
     }
   }
 
+  function updateGenPlayFromIndicator() {
+    const el = $('genPlayFromIndicator');
+    if (genPlayFromBeat > 0) {
+      el.style.display = 'inline';
+      el.textContent = '▶ desde el punto marcado (tocá "Desde el principio" para reiniciar)';
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+  }
+
   $('playBtn').addEventListener('click', () => {
     if (!activePart || !fingering) return;
     player.onNoteOn = (idx) => { const el = document.querySelector(`#tabwrap .note-num[data-idx="${idx}"]`); if (el) el.classList.add('active'); };
     player.onNoteOff = (idx) => { const el = document.querySelector(`#tabwrap .note-num[data-idx="${idx}"]`); if (el) el.classList.remove('active'); };
     player.onEnd = () => { $('playBtn').disabled = false; $('stopBtn').disabled = true; };
-    player.play(activePart.events, genNotePositions, parseFloat($('bpmInput').value) || 100);
+    player.play(activePart.events, genNotePositions, parseFloat($('bpmInput').value) || 100, genPlayFromBeat);
     $('playBtn').disabled = true; $('stopBtn').disabled = false;
   });
   $('stopBtn').addEventListener('click', () => {
     player.stop();
     document.querySelectorAll('#tabwrap .note-num.active').forEach(el => el.classList.remove('active'));
     $('playBtn').disabled = false; $('stopBtn').disabled = true;
+  });
+  $('genPlayFromIndicator').addEventListener('click', () => {
+    genPlayFromBeat = 0;
+    updateGenPlayFromIndicator();
+    document.querySelectorAll('#tabwrap .note-num.play-from-marker').forEach(el => el.classList.remove('play-from-marker'));
   });
 
   $('downloadTxtBtn').addEventListener('click', () => {
@@ -198,16 +236,30 @@
      EDITOR VIEW (manual tab building)
      ============================================================ */
   const editorMount = $('editorMount');
+  let editorNotePositions = [];
+  let editorTabId = null; // set when editing an existing library tab
   const editor = new Ed.TabEditor(editorMount, {
     maxFret: 12,
     weightMode: 'balanced',
     onChange: (state) => {
       $('editorPlayBtn').disabled = editor.events.length === 0;
       if (state && state.notice) showMsg($('editorMsgs'), state.notice, 'warn');
+    },
+    onPlayNote: (midi) => {
+      player.playSingleNote(midi);
+    },
+    onPlayFrom: (index) => {
+      const { notePositions } = R.buildTabSVG(editor.events, editor.chosen, Ed.DIVISIONS, { editable: false });
+      editorNotePositions = notePositions;
+      const np = notePositions.find(n => n.index === index);
+      const fromBeat = np ? np.startBeat : 0;
+      player.onNoteOn = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.add('active'); };
+      player.onNoteOff = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.remove('active'); };
+      player.onEnd = () => { $('editorPlayBtn').disabled = false; $('editorStopBtn').disabled = true; };
+      player.play(editor.events, editorNotePositions, parseFloat($('editorBpm').value) || 90, fromBeat);
+      $('editorPlayBtn').disabled = true; $('editorStopBtn').disabled = false;
     }
   });
-  let editorNotePositions = [];
-  let editorTabId = null; // set when editing an existing library tab
 
   $('editorMaxFret').addEventListener('change', (e) => { editor.maxFret = parseInt(e.target.value, 10); });
   $('editorWeightMode').addEventListener('change', (e) => { editor.weightMode = e.target.value; });
@@ -249,6 +301,8 @@
       events: editor.events,
       chosen: editor.chosen,
       repeatMarks: editor.repeatMarks,
+      meterNum: editor.meterNum,
+      meterDen: editor.meterDen,
       source: 'manual'
     };
     const saved = await L.saveTab(tab);
@@ -308,7 +362,7 @@
     const tab = await L.getTab(id);
     if (!tab) return;
     showView('editor');
-    editor.loadFrom(tab.events, tab.chosen, tab.maxFret, tab.weightMode, tab.repeatMarks);
+    editor.loadFrom(tab.events, tab.chosen, tab.maxFret, tab.weightMode, tab.repeatMarks, { num: tab.meterNum, den: tab.meterDen });
     editorTabId = tab.id;
     $('editorTitleInput').value = tab.title || '';
     $('editorBpm').value = tab.tempo || 90;

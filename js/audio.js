@@ -48,19 +48,26 @@
    * @param {Array} events - full event list (midi/isRest)
    * @param {Array} notePositions - [{index,startBeat,durBeat}] from render.js
    * @param {number} bpm
+   * @param {number} [fromBeat] - if given, playback starts at this beat offset instead of from the top; notes before it are skipped entirely (not just silenced), so "play from here" starts instantly rather than waiting through the skipped section.
    */
-  AudioPlayer.prototype.play = function (events, notePositions, bpm) {
+  AudioPlayer.prototype.play = function (events, notePositions, bpm, fromBeat) {
     this.stop();
     if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.ctx.state === 'suspended') this.ctx.resume();
 
+    const origin = fromBeat || 0;
+    const toPlay = origin > 0 ? notePositions.filter(np => (np.startBeat + np.durBeat) > origin) : notePositions;
+
     const secPerBeat = 60 / (bpm || 100);
     const startAt = this.ctx.currentTime + 0.15;
 
-    notePositions.forEach(np => {
+    toPlay.forEach(np => {
       const ev = events[np.index];
       if (!ev || ev.midi === null) return;
-      const t = startAt + np.startBeat * secPerBeat;
+      // Clamp so a note that was already sounding when playback starts mid-way
+      // through it doesn't get scheduled at a negative offset.
+      const relativeBeat = Math.max(0, np.startBeat - origin);
+      const t = startAt + relativeBeat * secPerBeat;
       const dur = np.durBeat * secPerBeat;
       this._pluck(E.midiToFreq(ev.midi), t, dur, 0.16);
 
@@ -71,8 +78,8 @@
       this.timers.push(onId, offId);
     });
 
-    const totalBeat = notePositions.length
-      ? Math.max(...notePositions.map(n => n.startBeat + n.durBeat))
+    const totalBeat = toPlay.length
+      ? Math.max(...toPlay.map(n => Math.max(0, n.startBeat - origin) + n.durBeat))
       : 0;
     const endId = setTimeout(() => {
       this.isPlaying = false;
@@ -81,6 +88,15 @@
     this.timers.push(endId);
 
     this.isPlaying = true;
+  };
+
+  /** Plays one pitch in isolation — used by "listen to this note" in the editor, to quickly confirm a note is correct without running the whole piece. */
+  AudioPlayer.prototype.playSingleNote = function (midi, durSeconds) {
+    this.stop();
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    const t = this.ctx.currentTime + 0.05;
+    this._pluck(E.midiToFreq(midi), t, durSeconds || 0.6, 0.18);
   };
 
   AudioPlayer.prototype.stop = function () {
