@@ -129,24 +129,21 @@
     genNotePositions = notePositions;
     $('tabwrap').innerHTML = svg;
     genPlayFromBeat = 0;
-    updateGenPlayFromIndicator();
 
-    // Clicking a note picks it as the playback start point, so the user can
-    // jump straight to a section instead of waiting through everything
-    // before it. Only pitched notes are clickable targets (rests/✕ marks
-    // have no note-num.editable class here since this SVG isn't in editable
-    // mode — but note-num elements still exist for pitched notes, so bind
-    // directly to those).
+    // Clicking a note plays it immediately (a quick way to check it's the
+    // right pitch) and marks it as the playback start point — Play then
+    // picks up from there with no extra button or indicator needed.
     document.querySelectorAll('#tabwrap .note-num[data-idx]').forEach(g => {
       g.style.cursor = 'pointer';
       g.addEventListener('click', () => {
         const idx = parseInt(g.getAttribute('data-idx'), 10);
+        const ev = events[idx];
         const np = genNotePositions.find(n => n.index === idx);
-        if (!np) return;
+        if (!np || !ev || ev.midi === null) return;
         genPlayFromBeat = np.startBeat;
-        updateGenPlayFromIndicator();
         document.querySelectorAll('#tabwrap .note-num.play-from-marker').forEach(el => el.classList.remove('play-from-marker'));
         g.classList.add('play-from-marker');
+        player.playSingleNote(ev.midi);
       });
     });
 
@@ -164,22 +161,18 @@
     }
   }
 
-  function updateGenPlayFromIndicator() {
-    const el = $('genPlayFromIndicator');
-    if (genPlayFromBeat > 0) {
-      el.style.display = 'inline';
-      el.textContent = '▶ desde el punto marcado (tocá "Desde el principio" para reiniciar)';
-    } else {
-      el.style.display = 'none';
-      el.textContent = '';
-    }
-  }
-
   $('playBtn').addEventListener('click', () => {
     if (!activePart || !fingering) return;
     player.onNoteOn = (idx) => { const el = document.querySelector(`#tabwrap .note-num[data-idx="${idx}"]`); if (el) el.classList.add('active'); };
     player.onNoteOff = (idx) => { const el = document.querySelector(`#tabwrap .note-num[data-idx="${idx}"]`); if (el) el.classList.remove('active'); };
-    player.onEnd = () => { $('playBtn').disabled = false; $('stopBtn').disabled = true; };
+    player.onEnd = () => {
+      $('playBtn').disabled = false; $('stopBtn').disabled = true;
+      // Reached the end naturally (not cut short with Stop) — reset so the
+      // next tap of Play starts from the top again, rather than replaying
+      // just the tail forever.
+      genPlayFromBeat = 0;
+      document.querySelectorAll('#tabwrap .note-num.play-from-marker').forEach(el => el.classList.remove('play-from-marker'));
+    };
     player.play(activePart.events, genNotePositions, parseFloat($('bpmInput').value) || 100, genPlayFromBeat);
     $('playBtn').disabled = true; $('stopBtn').disabled = false;
   });
@@ -187,11 +180,6 @@
     player.stop();
     document.querySelectorAll('#tabwrap .note-num.active').forEach(el => el.classList.remove('active'));
     $('playBtn').disabled = false; $('stopBtn').disabled = true;
-  });
-  $('genPlayFromIndicator').addEventListener('click', () => {
-    genPlayFromBeat = 0;
-    updateGenPlayFromIndicator();
-    document.querySelectorAll('#tabwrap .note-num.play-from-marker').forEach(el => el.classList.remove('play-from-marker'));
   });
 
   $('downloadTxtBtn').addEventListener('click', () => {
@@ -247,17 +235,6 @@
     },
     onPlayNote: (midi) => {
       player.playSingleNote(midi);
-    },
-    onPlayFrom: (index) => {
-      const { notePositions } = R.buildTabSVG(editor.events, editor.chosen, Ed.DIVISIONS, { editable: false });
-      editorNotePositions = notePositions;
-      const np = notePositions.find(n => n.index === index);
-      const fromBeat = np ? np.startBeat : 0;
-      player.onNoteOn = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.add('active'); };
-      player.onNoteOff = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.remove('active'); };
-      player.onEnd = () => { $('editorPlayBtn').disabled = false; $('editorStopBtn').disabled = true; };
-      player.play(editor.events, editorNotePositions, parseFloat($('editorBpm').value) || 90, fromBeat);
-      $('editorPlayBtn').disabled = true; $('editorStopBtn').disabled = false;
     }
   });
 
@@ -268,10 +245,18 @@
     if (!editor.events.length) return;
     const { notePositions } = R.buildTabSVG(editor.events, editor.chosen, Ed.DIVISIONS, { editable: false });
     editorNotePositions = notePositions;
+    // If a note is currently selected (the user just tapped it), start
+    // playback there instead of from the top — no extra button needed,
+    // Play just picks up where the last tap left off.
+    let fromBeat = 0;
+    if (editor.selectedIndex !== null && editor.selectedIndex !== undefined) {
+      const np = notePositions.find(n => n.index === editor.selectedIndex);
+      if (np) fromBeat = np.startBeat;
+    }
     player.onNoteOn = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.add('active'); };
     player.onNoteOff = (idx) => { const el = editorMount.querySelector(`.note-num[data-idx="${idx}"]`); if (el) el.classList.remove('active'); };
     player.onEnd = () => { $('editorPlayBtn').disabled = false; $('editorStopBtn').disabled = true; };
-    player.play(editor.events, editorNotePositions, parseFloat($('editorBpm').value) || 90);
+    player.play(editor.events, editorNotePositions, parseFloat($('editorBpm').value) || 90, fromBeat);
     $('editorPlayBtn').disabled = true; $('editorStopBtn').disabled = false;
   });
   $('editorStopBtn').addEventListener('click', () => {

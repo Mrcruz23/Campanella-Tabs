@@ -36,8 +36,7 @@
     this.maxFret = (opts && opts.maxFret) || 12;
     this.weightMode = (opts && opts.weightMode) || 'balanced';
     this.onChange = (opts && opts.onChange) || function () {};
-    this.onPlayNote = (opts && opts.onPlayNote) || null; // (midi) => void — "listen to just this note"
-    this.onPlayFrom = (opts && opts.onPlayFrom) || null; // (index) => void — "play from this point onward"
+    this.onPlayNote = (opts && opts.onPlayNote) || null; // (midi) => void — called automatically when a note is selected, so tapping through notes doubles as an audio check
     this.events = [];      // {midi,isRest,duration,measureIndex}
     this.chosen = [];      // {string,fret}|null, parallel to events
     this.beatsPerMeasure = 4; // 4/4 default; editable via UI (derived from meterNum/meterDen below)
@@ -351,11 +350,12 @@
     this._afterMutate();
   };
 
-  /** Called when the user clicks a note already on the grid: opens the assist panel for it. */
+  /** Called when the user clicks a note already on the grid: selects it (opens the assist panel) and plays it immediately, so tapping through notes doubles as an audio check without any extra button. */
   TabEditor.prototype.selectNote = function (index) {
     if (this.events[index] == null || this.events[index].isRest) { this.assistPanel.style.display = 'none'; return; }
     this.selectedIndex = index;
     this._renderAssist();
+    if (this.onPlayNote) this.onPlayNote(this.events[index].midi);
   };
 
   TabEditor.prototype._prevChosenBefore = function (index) {
@@ -466,10 +466,6 @@
         html += `<div class="assist-note-explain">Las opciones bloqueadas repetirían la cuerda de la nota anterior habiendo una alternativa — eso rompe el efecto campanella (las notas se cortarían entre sí en vez de sonar superpuestas).</div>`;
       }
     }
-    html += `<div class="assist-play-row">
-      <button type="button" class="btn-ghost assist-play-note">🔊 Escuchar esta nota</button>
-      <button type="button" class="btn-brass assist-play-from">▶ Reproducir desde acá</button>
-    </div>`;
     html += `<button type="button" class="btn-danger assist-delete">Eliminar esta nota</button>`;
 
     this.assistBody.innerHTML = html;
@@ -510,13 +506,6 @@
       this.selectedIndex = null;
       this.assistPanel.style.display = 'none';
       this._afterMutate();
-    });
-
-    this.assistBody.querySelector('.assist-play-note').addEventListener('click', () => {
-      if (this.onPlayNote) this.onPlayNote(ev.midi);
-    });
-    this.assistBody.querySelector('.assist-play-from').addEventListener('click', () => {
-      if (this.onPlayFrom) this.onPlayFrom(idx);
     });
   };
 
